@@ -4,7 +4,8 @@ import {
   Heart, Camera, ChevronRight, ChevronLeft, X,
   Upload, Check, Loader2, Sparkles,
 } from 'lucide-react';
-import { uploadPhoto, createCard } from '../lib/api';
+import { fileToDataUrl, saveCard } from '../lib/store';
+import type { Card } from '../lib/types';
 
 const STEPS = [
   { id: 1, label: 'Recipient' },
@@ -61,18 +62,18 @@ export default function CreatePage() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const tempId = crypto.randomUUID();
-      const photoUrls = await Promise.all(photos.map(p => uploadPhoto(p.file, tempId)));
-      const cardId = await createCard({
-        recipientName,
-        message,
-        theme: 'birthday',
-        photoUrls,
-        voiceUrl: null,
-      });
-      navigate(`/card/${cardId}`);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const photoDataUrls = await Promise.all(photos.map(p => fileToDataUrl(p.file)));
+      const card: Card = {
+        id: crypto.randomUUID(),
+        recipient_name: recipientName.trim(),
+        message: message.trim(),
+        photo_urls: photoDataUrls,
+        created_at: new Date().toISOString(),
+      };
+      saveCard(card);
+      navigate(`/card/${card.id}`);
+    } catch {
+      setSubmitError('Something went wrong. Please try again.');
       setIsSubmitting(false);
     }
   };

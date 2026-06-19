@@ -4,18 +4,17 @@ import QRCode from 'qrcode';
 import {
   Heart, ChevronLeft, ChevronRight,
   Download, Copy, Check,
-  ArrowLeft, Loader2, AlertCircle,
+  ArrowLeft, AlertCircle,
 } from 'lucide-react';
-import { getCard } from '../lib/api';
-import type { Card } from '../lib/supabase';
+import { loadCard } from '../lib/store';
+import type { Card } from '../lib/types';
 
 export default function CardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [card, setCard] = useState<Card | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   const [slideIndex, setSlideIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
@@ -28,13 +27,9 @@ export default function CardPage() {
 
   useEffect(() => {
     if (!id) return;
-    getCard(id)
-      .then(data => {
-        if (!data) { setError('Card not found.'); return; }
-        setCard(data as Card);
-      })
-      .catch(() => setError('Failed to load the card. Please try again.'))
-      .finally(() => setLoading(false));
+    const data = loadCard(id);
+    if (!data) { setNotFound(true); return; }
+    setCard(data);
   }, [id]);
 
   useEffect(() => {
@@ -73,22 +68,13 @@ export default function CardPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-neutral-300" />
-        <p className="text-sm text-neutral-400">Loading your card...</p>
-      </div>
-    );
-  }
-
-  if (error || !card) {
+  if (notFound) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4 px-6 text-center">
         <AlertCircle className="w-12 h-12 text-neutral-300" />
         <h2 className="text-xl font-semibold text-neutral-800">Card not found</h2>
         <p className="text-neutral-500 text-sm max-w-xs">
-          {error || 'This card may have been removed or the link is incorrect.'}
+          This card doesn't exist or was created on a different device.
         </p>
         <button
           onClick={() => navigate('/')}
@@ -99,6 +85,8 @@ export default function CardPage() {
       </div>
     );
   }
+
+  if (!card) return null;
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -123,7 +111,6 @@ export default function CardPage() {
 
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-lg shadow-black/5 overflow-hidden animate-scale-in">
-          {/* Accent strip */}
           <div className="h-1 w-full bg-gradient-to-r from-rose-300 via-pink-400 to-rose-300" />
 
           {/* Title */}
