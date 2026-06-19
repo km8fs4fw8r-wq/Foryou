@@ -4,7 +4,7 @@ import {
   Heart, Camera, ChevronRight, ChevronLeft, X,
   Upload, Check, Loader2, Sparkles,
 } from 'lucide-react';
-import { fileToDataUrl, saveCard } from '../lib/store';
+import { compressImage, saveCard } from '../lib/store';
 import type { Card } from '../lib/types';
 
 const STEPS = [
@@ -62,7 +62,7 @@ export default function CreatePage() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const photoDataUrls = await Promise.all(photos.map(p => fileToDataUrl(p.file)));
+      const photoDataUrls = await Promise.all(photos.map(p => compressImage(p.file)));
       const card: Card = {
         id: crypto.randomUUID(),
         recipient_name: recipientName.trim(),
