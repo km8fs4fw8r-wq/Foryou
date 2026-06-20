@@ -4,17 +4,18 @@ import QRCode from 'qrcode';
 import {
   Heart, ChevronLeft, ChevronRight,
   Download, Copy, Check,
-  ArrowLeft, AlertCircle,
+  ArrowLeft, Loader2, AlertCircle,
 } from 'lucide-react';
-import { loadCard } from '../lib/store';
-import type { Card } from '../lib/types';
+import { getCard } from '../lib/store';
+import type { Card } from '../lib/supabase';
 
 export default function CardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [card, setCard] = useState<Card | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [slideIndex, setSlideIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
@@ -27,9 +28,13 @@ export default function CardPage() {
 
   useEffect(() => {
     if (!id) return;
-    const data = loadCard(id);
-    if (!data) { setNotFound(true); return; }
-    setCard(data);
+    getCard(id)
+      .then(data => {
+        if (!data) { setError('Card not found.'); return; }
+        setCard(data);
+      })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load card.'))
+      .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
@@ -42,17 +47,17 @@ export default function CardPage() {
   }, [card, cardUrl]);
 
   const nextSlide = useCallback(() => {
-    if (!card) return;
-    setSlideIndex(i => (i + 1) % card.photo_urls.length);
+    if (!card?.photo_urls?.length) return;
+    setSlideIndex(i => (i + 1) % card.photo_urls!.length);
   }, [card]);
 
   const prevSlide = useCallback(() => {
-    if (!card) return;
-    setSlideIndex(i => (i - 1 + card.photo_urls.length) % card.photo_urls.length);
+    if (!card?.photo_urls?.length) return;
+    setSlideIndex(i => (i - 1 + card.photo_urls!.length) % card.photo_urls!.length);
   }, [card]);
 
   useEffect(() => {
-    if (!card || card.photo_urls.length <= 1 || !isAutoPlaying) return;
+    if (!card?.photo_urls || card.photo_urls.length <= 1 || !isAutoPlaying) return;
     slideTimerRef.current = setInterval(nextSlide, 3500);
     return () => { if (slideTimerRef.current) clearInterval(slideTimerRef.current); };
   }, [card, isAutoPlaying, nextSlide]);
@@ -68,13 +73,22 @@ export default function CardPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (notFound) {
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-neutral-300" />
+        <p className="text-sm text-neutral-400">Loading your card...</p>
+      </div>
+    );
+  }
+
+  if (error || !card) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4 px-6 text-center">
         <AlertCircle className="w-12 h-12 text-neutral-300" />
         <h2 className="text-xl font-semibold text-neutral-800">Card not found</h2>
         <p className="text-neutral-500 text-sm max-w-xs">
-          This card doesn't exist or was created on a different device.
+          {error ?? 'This card may have been removed or the link is incorrect.'}
         </p>
         <button
           onClick={() => navigate('/')}
@@ -86,7 +100,7 @@ export default function CardPage() {
     );
   }
 
-  if (!card) return null;
+  const photos = card.photo_urls ?? [];
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -134,9 +148,9 @@ export default function CardPage() {
           </div>
 
           {/* Photo slideshow */}
-          {card.photo_urls.length > 0 && (
+          {photos.length > 0 && (
             <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden">
-              {card.photo_urls.map((url, i) => (
+              {photos.map((url, i) => (
                 <div
                   key={i}
                   className="absolute inset-0 transition-opacity duration-700"
@@ -146,7 +160,7 @@ export default function CardPage() {
                 </div>
               ))}
 
-              {card.photo_urls.length > 1 && (
+              {photos.length > 1 && (
                 <>
                   <button
                     onClick={() => { pauseAutoPlay(); prevSlide(); }}
@@ -161,7 +175,7 @@ export default function CardPage() {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <div className="absolute bottom-3 inset-x-0 flex justify-center gap-1.5">
-                    {card.photo_urls.map((_, i) => (
+                    {photos.map((_, i) => (
                       <button
                         key={i}
                         onClick={() => { pauseAutoPlay(); setSlideIndex(i); }}
@@ -189,7 +203,7 @@ export default function CardPage() {
         {/* Share */}
         <div className="bg-white rounded-3xl shadow-lg shadow-black/5 p-7 animate-fade-in-up delay-200">
           <h3 className="font-semibold text-neutral-900 mb-1">Share this card</h3>
-          <p className="text-sm text-neutral-400 mb-5">Anyone with this link or QR code can view it.</p>
+          <p className="text-sm text-neutral-400 mb-5">Anyone with this link or QR code can view it on any device.</p>
 
           <div className="flex gap-2 mb-6">
             <div className="flex-1 bg-neutral-50 rounded-xl px-4 py-3 text-sm text-neutral-400 truncate border border-neutral-100 font-mono">

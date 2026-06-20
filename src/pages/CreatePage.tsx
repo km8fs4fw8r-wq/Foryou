@@ -4,8 +4,7 @@ import {
   Heart, Camera, ChevronRight, ChevronLeft, X,
   Upload, Check, Loader2, Sparkles,
 } from 'lucide-react';
-import { compressImage, saveCard } from '../lib/store';
-import type { Card } from '../lib/types';
+import { uploadPhoto, createCard } from '../lib/store';
 
 const STEPS = [
   { id: 1, label: 'Recipient' },
@@ -62,18 +61,18 @@ export default function CreatePage() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const photoDataUrls = await Promise.all(photos.map(p => compressImage(p.file)));
-      const card: Card = {
-        id: crypto.randomUUID(),
-        recipient_name: recipientName.trim(),
+      const cardId = crypto.randomUUID();
+      const photoUrls = await Promise.all(
+        photos.map(p => uploadPhoto(p.file, cardId)),
+      );
+      const savedId = await createCard({
+        recipientName: recipientName.trim(),
         message: message.trim(),
-        photo_urls: photoDataUrls,
-        created_at: new Date().toISOString(),
-      };
-      saveCard(card);
-      navigate(`/card/${card.id}`);
-    } catch {
-      setSubmitError('Something went wrong. Please try again.');
+        photoUrls,
+      });
+      navigate(`/card/${savedId}`);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setIsSubmitting(false);
     }
   };
@@ -290,7 +289,7 @@ export default function CreatePage() {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Creating your card...
+                Saving your card...
               </>
             ) : step === STEPS.length ? (
               <>
