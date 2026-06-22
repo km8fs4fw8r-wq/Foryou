@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Heart, Camera, ChevronRight, ChevronLeft, X,
+  Heart, ChevronRight, ChevronLeft, X,
   Upload, Check, Loader2, Sparkles,
 } from 'lucide-react';
 import { uploadPhoto, createCard } from '../lib/store';
@@ -34,7 +34,7 @@ export default function CreatePage() {
       if (!files) return;
       const newItems: PhotoItem[] = [];
       Array.from(files).forEach(file => {
-        if (photos.length + newItems.length >= 3) return;
+        if (photos.length + newItems.length >= 1) return;
         if (!file.type.startsWith('image/')) return;
         newItems.push({ file, preview: URL.createObjectURL(file) });
       });
@@ -62,13 +62,13 @@ export default function CreatePage() {
     setSubmitError(null);
     try {
       const cardId = crypto.randomUUID();
-      const photoPaths = await Promise.all(
-        photos.map(p => uploadPhoto(p.file, cardId)),
-      );
+      const photoPath = photos[0]
+        ? await uploadPhoto(photos[0].file, cardId)
+        : null;
       const savedId = await createCard({
         recipientName: recipientName.trim(),
         message: message.trim(),
-        photoPaths,
+        photoPath,
       });
       navigate(`/card/${savedId}`);
     } catch (err) {
@@ -172,13 +172,12 @@ export default function CreatePage() {
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
                 Add photos
               </h2>
-              <p className="text-neutral-500 mb-8">Upload up to 3 photos for the card.</p>
+              <p className="text-neutral-500 mb-8">Upload a photo for the card.</p>
 
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                multiple
                 className="hidden"
                 onChange={e => handlePhotoSelect(e.target.files)}
               />
@@ -191,8 +190,8 @@ export default function CreatePage() {
                   <div className="w-14 h-14 rounded-2xl bg-neutral-100 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                     <Upload className="w-7 h-7 text-neutral-400" />
                   </div>
-                  <p className="font-medium text-neutral-700 mb-1">Click to upload photos</p>
-                  <p className="text-sm text-neutral-400">JPEG, PNG, WebP — up to 3 photos</p>
+                  <p className="font-medium text-neutral-700 mb-1">Click to upload a photo</p>
+                  <p className="text-sm text-neutral-400">JPEG, PNG, or WebP</p>
                 </button>
               ) : (
                 <>
@@ -212,17 +211,8 @@ export default function CreatePage() {
                         </button>
                       </div>
                     ))}
-                    {photos.length < 3 && (
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="aspect-square rounded-2xl border-2 border-dashed border-neutral-200 flex flex-col items-center justify-center gap-2 hover:border-neutral-400 hover:bg-neutral-50 transition-all"
-                      >
-                        <Camera className="w-6 h-6 text-neutral-300" />
-                        <span className="text-xs text-neutral-400 font-medium">Add more</span>
-                      </button>
-                    )}
                   </div>
-                  <p className="text-xs text-neutral-400 text-right font-medium">{photos.length}/3 photos</p>
+                  <p className="text-xs text-neutral-400 text-right font-medium">1 photo</p>
                 </>
               )}
             </div>

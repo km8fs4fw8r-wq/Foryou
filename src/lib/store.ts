@@ -43,7 +43,8 @@ export function getPhotoPublicUrl(value: string): string {
 
   const path = value
     .replace(/^\/+/, '')
-    .replace(/^card-photos\//, '');
+    .replace(/^card-photos\//, '')
+    .replace(/\/+/g, '/');
 
   return supabase.storage.from('card-photos').getPublicUrl(path).data.publicUrl;
 }
@@ -51,12 +52,12 @@ export function getPhotoPublicUrl(value: string): string {
 export async function createCard(params: {
   recipientName: string;
   message: string;
-  photoPaths: string[];
+  photoPath: string | null;
 }): Promise<string> {
   const row = {
     recipient: params.recipientName,
     message: params.message,
-    photo_url: params.photoPaths,
+    photo_url: params.photoPath,
     voice_url: null,
   };
 

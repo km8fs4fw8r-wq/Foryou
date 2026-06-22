@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  Heart, ChevronLeft, ChevronRight,
+  Heart,
   Download, Copy, Check,
   ArrowLeft, Loader2, AlertCircle,
 } from 'lucide-react';
@@ -16,10 +16,6 @@ export default function CardPage() {
   const [card, setCard] = useState<Card | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [slideIndex, setSlideIndex] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const slideTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -45,27 +41,6 @@ export default function CardPage() {
       color: { dark: '#1a1a1a', light: '#ffffff' },
     }).then(setQrDataUrl);
   }, [card, cardUrl]);
-
-  const nextSlide = useCallback(() => {
-    if (!card?.photo_url?.length) return;
-    setSlideIndex(i => (i + 1) % card.photo_url!.length);
-  }, [card]);
-
-  const prevSlide = useCallback(() => {
-    if (!card?.photo_url?.length) return;
-    setSlideIndex(i => (i - 1 + card.photo_url!.length) % card.photo_url!.length);
-  }, [card]);
-
-  useEffect(() => {
-    if (!card?.photo_url || card.photo_url.length <= 1 || !isAutoPlaying) return;
-    slideTimerRef.current = setInterval(nextSlide, 3500);
-    return () => { if (slideTimerRef.current) clearInterval(slideTimerRef.current); };
-  }, [card, isAutoPlaying, nextSlide]);
-
-  const pauseAutoPlay = () => {
-    setIsAutoPlaying(false);
-    if (slideTimerRef.current) clearInterval(slideTimerRef.current);
-  };
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(cardUrl);
@@ -100,7 +75,9 @@ export default function CardPage() {
     );
   }
 
-  const photos = (card.photo_url ?? []).map(getPhotoPublicUrl);
+  const photoUrl = card.photo_url
+    ? getPhotoPublicUrl(card.photo_url)
+    : null;
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -147,46 +124,14 @@ export default function CardPage() {
             )}
           </div>
 
-          {/* Photo slideshow */}
-          {photos.length > 0 && (
+          {/* Photo */}
+          {photoUrl && (
             <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden">
-              {photos.map((url, i) => (
-                <div
-                  key={i}
-                  className="absolute inset-0 transition-opacity duration-700"
-                  style={{ opacity: i === slideIndex ? 1 : 0 }}
-                >
-                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
-              ))}
-
-              {photos.length > 1 && (
-                <>
-                  <button
-                    onClick={() => { pauseAutoPlay(); prevSlide(); }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 transition-colors"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => { pauseAutoPlay(); nextSlide(); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 transition-colors"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <div className="absolute bottom-3 inset-x-0 flex justify-center gap-1.5">
-                    {photos.map((_, i) => (
-                      <button
-                        key={i}
-                        onClick={() => { pauseAutoPlay(); setSlideIndex(i); }}
-                        className={`rounded-full transition-all ${
-                          i === slideIndex ? 'w-5 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
+              <img
+                src={photoUrl}
+                alt={`Photo for ${card.recipient}`}
+                className="w-full h-full object-cover"
+              />
             </div>
           )}
 

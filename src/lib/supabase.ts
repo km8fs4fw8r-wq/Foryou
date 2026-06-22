@@ -14,7 +14,7 @@ export interface Card {
   id: string;
   recipient: string;
   message: string | null;
-  photo_url: string[] | null;
+  photo_url: string | null;
   voice_url: string | null;
   created_at: string;
 }
