@@ -17,6 +17,59 @@ interface PhotoItem {
   preview: string;
 }
 
+function isHeicFile(file: File): boolean {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  return (
+    file.type === 'image/heic' ||
+    file.type === 'image/heif' ||
+    extension === 'heic' ||
+    extension === 'heif'
+  );
+}
+
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('This browser could not decode the HEIC photo.'));
+      element.src = objectUrl;
+    });
+
+    const maxDimension = 2400;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Photo conversion is unavailable in this browser.');
+
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        result => {
+          if (result) resolve(result);
+          else reject(new Error('Failed to convert the HEIC photo to JPEG.'));
+        },
+        'image/jpeg',
+        0.9,
+      );
+    });
+
+    const baseName = file.name.replace(/\.(heic|heif)$/i, '') || 'photo';
+    return new File([blob], `${baseName}.jpg`, {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export default function CreatePage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -30,15 +83,36 @@ export default function CreatePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoSelect = useCallback(
-    (files: FileList | null) => {
+    async (files: FileList | null) => {
       if (!files) return;
-      const newItems: PhotoItem[] = [];
-      Array.from(files).forEach(file => {
-        if (photos.length + newItems.length >= 1) return;
-        if (!file.type.startsWith('image/')) return;
-        newItems.push({ file, preview: URL.createObjectURL(file) });
-      });
-      setPhotos(prev => [...prev, ...newItems]);
+      const file = Array.from(files)[0];
+      if (!file || photos.length >= 1) return;
+
+      setSubmitError(null);
+
+      try {
+        const uploadFile = isHeicFile(file)
+          ? await convertHeicToJpeg(file)
+          : file;
+
+        if (!uploadFile.type.startsWith('image/')) {
+          throw new Error('Please choose a valid image file.');
+        }
+
+        setPhotos(prev => [
+          ...prev,
+          { file: uploadFile, preview: URL.createObjectURL(uploadFile) },
+        ]);
+      } catch (err) {
+        console.error('[Photo conversion] HEIC conversion failed', err);
+        setSubmitError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to prepare this photo. Please choose a JPEG, PNG, or WebP image.',
+        );
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     },
     [photos.length],
   );
@@ -177,9 +251,9 @@ export default function CreatePage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif,image/heic,image/heif"
                 className="hidden"
-                onChange={e => handlePhotoSelect(e.target.files)}
+                onChange={e => { void handlePhotoSelect(e.target.files); }}
               />
 
               {photos.length === 0 ? (
@@ -214,6 +288,12 @@ export default function CreatePage() {
                   </div>
                   <p className="text-xs text-neutral-400 text-right font-medium">1 photo</p>
                 </>
+              )}
+
+              {submitError && (
+                <div className="mt-5 p-4 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm">
+                  {submitError}
+                </div>
               )}
             </div>
           )}
