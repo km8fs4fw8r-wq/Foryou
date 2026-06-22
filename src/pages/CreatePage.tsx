@@ -33,11 +33,13 @@ export default function CreatePage() {
     (files: FileList | null) => {
       if (!files) return;
       const newItems: PhotoItem[] = [];
+
       Array.from(files).forEach(file => {
         if (photos.length + newItems.length >= 3) return;
         if (!file.type.startsWith('image/')) return;
         newItems.push({ file, preview: URL.createObjectURL(file) });
       });
+
       setPhotos(prev => [...prev, ...newItems]);
     },
     [photos.length],
@@ -60,19 +62,27 @@ export default function CreatePage() {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
+
     try {
       const cardId = crypto.randomUUID();
-      const photoUrls = await Promise.all(
+      const photoPaths = await Promise.all(
         photos.map(p => uploadPhoto(p.file, cardId)),
       );
+
       const savedId = await createCard({
         recipientName: recipientName.trim(),
         message: message.trim(),
-        photoUrls,
+        photoPaths,
       });
+
       navigate(`/card/${savedId}`);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      console.error('[Supabase trace] Create Card flow stopped', err);
+      setSubmitError(
+        err instanceof Error
+          ? err.message
+          : 'Something went wrong. Please try again.',
+      );
       setIsSubmitting(false);
     }
   };
@@ -86,8 +96,11 @@ export default function CreatePage() {
             <div className="w-7 h-7 bg-black rounded-full flex items-center justify-center">
               <Heart className="w-3.5 h-3.5 text-white fill-white" />
             </div>
-            <span className="font-semibold text-[15px] tracking-tight">WishLink</span>
+            <span className="font-semibold text-[15px] tracking-tight">
+              WishLink
+            </span>
           </button>
+
           <span className="text-sm text-neutral-400 font-medium">
             {step} / {STEPS.length}
           </span>
@@ -102,13 +115,21 @@ export default function CreatePage() {
             style={{ width: `${(step / STEPS.length) * 100}%` }}
           />
         </div>
+
         <div className="max-w-xl mx-auto px-6 py-3 flex items-center gap-1">
           {STEPS.map((s, i) => (
             <div key={s.id} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="w-3 h-3 text-neutral-200 flex-shrink-0" />}
+              {i > 0 && (
+                <ChevronRight className="w-3 h-3 text-neutral-200 flex-shrink-0" />
+              )}
+
               <div
                 className={`flex items-center gap-1.5 transition-all duration-200 ${
-                  step === s.id ? 'opacity-100' : step > s.id ? 'opacity-60' : 'opacity-25'
+                  step === s.id
+                    ? 'opacity-100'
+                    : step > s.id
+                      ? 'opacity-60'
+                      : 'opacity-25'
                 }`}
               >
                 {step > s.id ? (
@@ -126,7 +147,10 @@ export default function CreatePage() {
                     {s.id}
                   </div>
                 )}
-                <span className="text-xs font-medium text-neutral-600 hidden sm:block">{s.label}</span>
+
+                <span className="text-xs font-medium text-neutral-600 hidden sm:block">
+                  {s.label}
+                </span>
               </div>
             </div>
           ))}
@@ -136,15 +160,21 @@ export default function CreatePage() {
       {/* Content */}
       <main className="pt-36 pb-32 px-6">
         <div className="max-w-xl mx-auto">
-
           {/* Step 1 — Recipient */}
           {step === 1 && (
             <div className="animate-fade-in-up">
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 1</p>
+              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">
+                Step 1
+              </p>
+
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
                 Who is this card for?
               </h2>
-              <p className="text-neutral-500 mb-8">Enter the name of the person receiving this card.</p>
+
+              <p className="text-neutral-500 mb-8">
+                Enter the name of the person receiving this card.
+              </p>
+
               <input
                 type="text"
                 value={recipientName}
@@ -152,13 +182,19 @@ export default function CreatePage() {
                 placeholder="e.g. Sarah, Mum, Alex..."
                 maxLength={50}
                 autoFocus
-                onKeyDown={e => { if (e.key === 'Enter' && canNext()) setStep(2); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && canNext()) setStep(2);
+                }}
                 className="w-full text-2xl sm:text-3xl font-display font-medium text-neutral-900 placeholder:text-neutral-300 border-0 border-b-2 border-neutral-200 focus:border-black outline-none pb-3 pt-1 transition-colors bg-transparent"
               />
+
               {recipientName.trim() && (
                 <p className="mt-5 text-sm text-neutral-500 animate-fade-in">
                   Creating a card for{' '}
-                  <span className="font-semibold text-neutral-800">{recipientName.trim()}</span>.
+                  <span className="font-semibold text-neutral-800">
+                    {recipientName.trim()}
+                  </span>
+                  .
                 </p>
               )}
             </div>
@@ -167,11 +203,17 @@ export default function CreatePage() {
           {/* Step 2 — Photos */}
           {step === 2 && (
             <div className="animate-fade-in-up">
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 2</p>
+              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">
+                Step 2
+              </p>
+
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
                 Add photos
               </h2>
-              <p className="text-neutral-500 mb-8">Upload up to 3 photos for the card.</p>
+
+              <p className="text-neutral-500 mb-8">
+                Upload up to 3 photos for the card.
+              </p>
 
               <input
                 ref={fileInputRef}
@@ -190,8 +232,14 @@ export default function CreatePage() {
                   <div className="w-14 h-14 rounded-2xl bg-neutral-100 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                     <Upload className="w-7 h-7 text-neutral-400" />
                   </div>
-                  <p className="font-medium text-neutral-700 mb-1">Click to upload photos</p>
-                  <p className="text-sm text-neutral-400">JPEG, PNG, WebP — up to 3 photos</p>
+
+                  <p className="font-medium text-neutral-700 mb-1">
+                    Click to upload photos
+                  </p>
+
+                  <p className="text-sm text-neutral-400">
+                    JPEG, PNG, WebP — up to 3 photos
+                  </p>
                 </button>
               ) : (
                 <>
@@ -201,8 +249,14 @@ export default function CreatePage() {
                         key={i}
                         className="relative aspect-square rounded-2xl overflow-hidden group animate-scale-in"
                       >
-                        <img src={photo.preview} alt="" className="w-full h-full object-cover" />
+                        <img
+                          src={photo.preview}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+
                         <button
                           onClick={() => removePhoto(i)}
                           className="absolute top-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-sm text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
@@ -211,17 +265,23 @@ export default function CreatePage() {
                         </button>
                       </div>
                     ))}
+
                     {photos.length < 3 && (
                       <button
                         onClick={() => fileInputRef.current?.click()}
                         className="aspect-square rounded-2xl border-2 border-dashed border-neutral-200 flex flex-col items-center justify-center gap-2 hover:border-neutral-400 hover:bg-neutral-50 transition-all"
                       >
                         <Camera className="w-6 h-6 text-neutral-300" />
-                        <span className="text-xs text-neutral-400 font-medium">Add more</span>
+                        <span className="text-xs text-neutral-400 font-medium">
+                          Add more
+                        </span>
                       </button>
                     )}
                   </div>
-                  <p className="text-xs text-neutral-400 text-right font-medium">{photos.length}/3 photos</p>
+
+                  <p className="text-xs text-neutral-400 text-right font-medium">
+                    {photos.length}/3 photos
+                  </p>
                 </>
               )}
             </div>
@@ -230,14 +290,22 @@ export default function CreatePage() {
           {/* Step 3 — Message */}
           {step === 3 && (
             <div className="animate-fade-in-up">
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 3</p>
+              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">
+                Step 3
+              </p>
+
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
                 Write your message
               </h2>
+
               <p className="text-neutral-500 mb-8">
                 A personal note for{' '}
-                <span className="font-medium text-neutral-700">{recipientName}</span>.
+                <span className="font-medium text-neutral-700">
+                  {recipientName}
+                </span>
+                .
               </p>
+
               <div className="relative">
                 <textarea
                   value={message}
@@ -248,6 +316,7 @@ export default function CreatePage() {
                   autoFocus
                   className="w-full text-base text-neutral-800 placeholder:text-neutral-300 border border-neutral-200 rounded-2xl focus:border-neutral-400 outline-none p-5 resize-none leading-relaxed transition-colors bg-transparent font-display"
                 />
+
                 <span className="absolute bottom-4 right-4 text-xs text-neutral-300 font-medium">
                   {message.length}/1000
                 </span>
@@ -260,7 +329,6 @@ export default function CreatePage() {
               )}
             </div>
           )}
-
         </div>
       </main>
 
@@ -277,8 +345,13 @@ export default function CreatePage() {
               Back
             </button>
           )}
+
           <button
-            onClick={step === STEPS.length ? handleSubmit : () => setStep(s => s + 1)}
+            onClick={
+              step === STEPS.length
+                ? handleSubmit
+                : () => setStep(s => s + 1)
+            }
             disabled={!canNext() || isSubmitting}
             className={`flex-1 flex items-center justify-center gap-2 text-sm font-medium px-5 py-3.5 rounded-full transition-all ${
               canNext() && !isSubmitting
