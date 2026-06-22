@@ -12,10 +12,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export interface Card {
   id: string;
-  recipient_name: string;
+  recipient: string;
   message: string | null;
-  theme: string;
-  photo_urls: string[] | null;
+  photo_url: string[] | null;
   voice_url: string | null;
   created_at: string;
 }

@@ -6,7 +6,7 @@ import {
   Download, Copy, Check,
   ArrowLeft, Loader2, AlertCircle,
 } from 'lucide-react';
-import { getCard } from '../lib/store';
+import { getCard, getPhotoPublicUrl } from '../lib/store';
 import type { Card } from '../lib/supabase';
 
 export default function CardPage() {
@@ -47,17 +47,17 @@ export default function CardPage() {
   }, [card, cardUrl]);
 
   const nextSlide = useCallback(() => {
-    if (!card?.photo_urls?.length) return;
-    setSlideIndex(i => (i + 1) % card.photo_urls!.length);
+    if (!card?.photo_url?.length) return;
+    setSlideIndex(i => (i + 1) % card.photo_url!.length);
   }, [card]);
 
   const prevSlide = useCallback(() => {
-    if (!card?.photo_urls?.length) return;
-    setSlideIndex(i => (i - 1 + card.photo_urls!.length) % card.photo_urls!.length);
+    if (!card?.photo_url?.length) return;
+    setSlideIndex(i => (i - 1 + card.photo_url!.length) % card.photo_url!.length);
   }, [card]);
 
   useEffect(() => {
-    if (!card?.photo_urls || card.photo_urls.length <= 1 || !isAutoPlaying) return;
+    if (!card?.photo_url || card.photo_url.length <= 1 || !isAutoPlaying) return;
     slideTimerRef.current = setInterval(nextSlide, 3500);
     return () => { if (slideTimerRef.current) clearInterval(slideTimerRef.current); };
   }, [card, isAutoPlaying, nextSlide]);
@@ -100,7 +100,7 @@ export default function CardPage() {
     );
   }
 
-  const photos = card.photo_urls ?? [];
+  const photos = (card.photo_url ?? []).map(getPhotoPublicUrl);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -132,7 +132,7 @@ export default function CardPage() {
             <div>
               <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-1">A card for</p>
               <h1 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 leading-tight">
-                {card.recipient_name}
+                {card.recipient}
               </h1>
             </div>
             {qrDataUrl && (

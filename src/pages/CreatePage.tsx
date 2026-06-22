@@ -62,16 +62,17 @@ export default function CreatePage() {
     setSubmitError(null);
     try {
       const cardId = crypto.randomUUID();
-      const photoUrls = await Promise.all(
+      const photoPaths = await Promise.all(
         photos.map(p => uploadPhoto(p.file, cardId)),
       );
       const savedId = await createCard({
         recipientName: recipientName.trim(),
         message: message.trim(),
-        photoUrls,
+        photoPaths,
       });
       navigate(`/card/${savedId}`);
     } catch (err) {
+      console.error('[Supabase trace] Create Card flow stopped', err);
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setIsSubmitting(false);
     }
