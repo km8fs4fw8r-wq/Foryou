@@ -1,0 +1,361 @@
+From 7936680d42990d8d2c22b6c101635bad13f419fe Mon Sep 17 00:00:00 2001
+From: km8fs4fw8r-wq <km8fs4fw8r@privaterelay.appleid.com>
+Date: Mon, 22 Jun 2026 13:29:39 +0800
+Subject: [PATCH] Fix Supabase upload tracing and RLS debugging
+
+---
+ src/lib/store.ts                              |  88 +++++++++++---
+ src/lib/supabase.ts                           |   5 +-
+ src/pages/CardPage.tsx                        |  16 +--
+ src/pages/CreatePage.tsx                      |   5 +-
+ ...2000000_align_cards_schema_and_storage.sql | 115 ++++++++++++++++++
+ vercel.json                                   |   8 ++
+ 6 files changed, 209 insertions(+), 28 deletions(-)
+ create mode 100644 supabase/migrations/20260622000000_align_cards_schema_and_storage.sql
+ create mode 100644 vercel.json
+
+diff --git a/src/lib/store.ts b/src/lib/store.ts
+index 94a3fed..aa36ea6 100644
+--- a/src/lib/store.ts
++++ b/src/lib/store.ts
+@@ -1,34 +1,92 @@
+ import { supabase, type Card } from './supabase';
+ 
+ export async function uploadPhoto(file: File, cardId: string): Promise<string> {
+-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+-  const path = `${cardId}/${Date.now()}.${ext}`;
+-  const { error } = await supabase.storage.from('card-photos').upload(path, file, {
++  const rawExtension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
++  const extension = rawExtension.replace(/[^a-z0-9]/g, '') || 'jpg';
++  const path = `cards/${cardId}/${crypto.randomUUID()}.${extension}`;
++
++  console.info('[Supabase trace] storage.objects INSERT started', {
++    bucket: 'card-photos',
++    path,
++    fileName: file.name,
++    fileType: file.type,
++    fileSize: file.size,
++  });
++
++  const { data, error } = await supabase.storage.from('card-photos').upload(path, file, {
+     cacheControl: '3600',
+     upsert: false,
+   });
+-  if (error) throw new Error(`Photo upload failed: ${error.message}`);
+-  const { data } = supabase.storage.from('card-photos').getPublicUrl(path);
+-  return data.publicUrl;
++
++  if (error) {
++    console.error('[Supabase trace] storage.objects INSERT failed', {
++      operation: 'storage.objects INSERT',
++      bucket: 'card-photos',
++      path,
++      error,
++    });
++    console.error('[Supabase trace] exact Storage error object', error);
++    throw new Error(`Photo upload failed: ${error.message}`);
++  }
++
++  console.info('[Supabase trace] storage.objects INSERT succeeded', {
++    bucket: 'card-photos',
++    requestedPath: path,
++    returnedData: data,
++  });
++
++  return data.path;
++}
++
++export function getPhotoPublicUrl(value: string): string {
++  if (/^https?:\/\//i.test(value)) return value;
++
++  const path = value
++    .replace(/^\/+/, '')
++    .replace(/^card-photos\//, '');
++
++  return supabase.storage.from('card-photos').getPublicUrl(path).data.publicUrl;
+ }
+ 
+ export async function createCard(params: {
+   recipientName: string;
+   message: string;
+-  photoUrls: string[];
++  photoPaths: string[];
+ }): Promise<string> {
++  const row = {
++    recipient: params.recipientName,
++    message: params.message,
++    photo_url: params.photoPaths,
++    voice_url: null,
++  };
++
++  console.info('[Supabase trace] public.cards INSERT started', {
++    table: 'public.cards',
++    row,
++  });
++
+   const { data, error } = await supabase
+     .from('cards')
+-    .insert({
+-      recipient_name: params.recipientName,
+-      message: params.message,
+-      theme: 'default',
+-      photo_urls: params.photoUrls,
+-      voice_url: null,
+-    })
++    .insert(row)
+     .select('id')
+     .single();
+-  if (error) throw new Error(`Failed to save card: ${error.message}`);
++
++  if (error) {
++    console.error('[Supabase trace] public.cards INSERT failed', {
++      operation: 'public.cards INSERT',
++      table: 'public.cards',
++      row,
++      error,
++    });
++    console.error('[Supabase trace] exact PostgREST error object', error);
++    throw new Error(`Failed to save card: ${error.message}`);
++  }
++
++  console.info('[Supabase trace] public.cards INSERT succeeded', {
++    table: 'public.cards',
++    returnedData: data,
++  });
++
+   return data.id;
+ }
+ 
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 9e257e4..89e0676 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -12,10 +12,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+ 
+ export interface Card {
+   id: string;
+-  recipient_name: string;
++  recipient: string;
+   message: string | null;
+-  theme: string;
+-  photo_urls: string[] | null;
++  photo_url: string[] | null;
+   voice_url: string | null;
+   created_at: string;
+ }
+diff --git a/src/pages/CardPage.tsx b/src/pages/CardPage.tsx
+index b1fb929..24250d2 100644
+--- a/src/pages/CardPage.tsx
++++ b/src/pages/CardPage.tsx
+@@ -6,7 +6,7 @@ import {
+   Download, Copy, Check,
+   ArrowLeft, Loader2, AlertCircle,
+ } from 'lucide-react';
+-import { getCard } from '../lib/store';
++import { getCard, getPhotoPublicUrl } from '../lib/store';
+ import type { Card } from '../lib/supabase';
+ 
+ export default function CardPage() {
+@@ -47,17 +47,17 @@ export default function CardPage() {
+   }, [card, cardUrl]);
+ 
+   const nextSlide = useCallback(() => {
+-    if (!card?.photo_urls?.length) return;
+-    setSlideIndex(i => (i + 1) % card.photo_urls!.length);
++    if (!card?.photo_url?.length) return;
++    setSlideIndex(i => (i + 1) % card.photo_url!.length);
+   }, [card]);
+ 
+   const prevSlide = useCallback(() => {
+-    if (!card?.photo_urls?.length) return;
+-    setSlideIndex(i => (i - 1 + card.photo_urls!.length) % card.photo_urls!.length);
++    if (!card?.photo_url?.length) return;
++    setSlideIndex(i => (i - 1 + card.photo_url!.length) % card.photo_url!.length);
+   }, [card]);
+ 
+   useEffect(() => {
+-    if (!card?.photo_urls || card.photo_urls.length <= 1 || !isAutoPlaying) return;
++    if (!card?.photo_url || card.photo_url.length <= 1 || !isAutoPlaying) return;
+     slideTimerRef.current = setInterval(nextSlide, 3500);
+     return () => { if (slideTimerRef.current) clearInterval(slideTimerRef.current); };
+   }, [card, isAutoPlaying, nextSlide]);
+@@ -100,7 +100,7 @@ export default function CardPage() {
+     );
+   }
+ 
+-  const photos = card.photo_urls ?? [];
++  const photos = (card.photo_url ?? []).map(getPhotoPublicUrl);
+ 
+   return (
+     <div className="min-h-screen bg-neutral-50">
+@@ -132,7 +132,7 @@ export default function CardPage() {
+             <div>
+               <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-1">A card for</p>
+               <h1 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 leading-tight">
+-                {card.recipient_name}
++                {card.recipient}
+               </h1>
+             </div>
+             {qrDataUrl && (
+diff --git a/src/pages/CreatePage.tsx b/src/pages/CreatePage.tsx
+index 57f8d7d..b882408 100644
+--- a/src/pages/CreatePage.tsx
++++ b/src/pages/CreatePage.tsx
+@@ -62,16 +62,17 @@ export default function CreatePage() {
+     setSubmitError(null);
+     try {
+       const cardId = crypto.randomUUID();
+-      const photoUrls = await Promise.all(
++      const photoPaths = await Promise.all(
+         photos.map(p => uploadPhoto(p.file, cardId)),
+       );
+       const savedId = await createCard({
+         recipientName: recipientName.trim(),
+         message: message.trim(),
+-        photoUrls,
++        photoPaths,
+       });
+       navigate(`/card/${savedId}`);
+     } catch (err) {
++      console.error('[Supabase trace] Create Card flow stopped', err);
+       setSubmitError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+       setIsSubmitting(false);
+     }
+diff --git a/supabase/migrations/20260622000000_align_cards_schema_and_storage.sql b/supabase/migrations/20260622000000_align_cards_schema_and_storage.sql
+new file mode 100644
+index 0000000..45eac8f
+--- /dev/null
++++ b/supabase/migrations/20260622000000_align_cards_schema_and_storage.sql
+@@ -0,0 +1,115 @@
++/*
++  Align the deployed cards table with the application contract:
++    id, recipient, message, photo_url, voice_url, created_at
++
++  photo_url remains a text array so the existing three-photo UI keeps working.
++  Existing recipient names and photo URL arrays are preserved.
++*/
++
++DO $$
++BEGIN
++  IF EXISTS (
++    SELECT 1
++    FROM information_schema.columns
++    WHERE table_schema = 'public'
++      AND table_name = 'cards'
++      AND column_name = 'recipient_name'
++  ) AND NOT EXISTS (
++    SELECT 1
++    FROM information_schema.columns
++    WHERE table_schema = 'public'
++      AND table_name = 'cards'
++      AND column_name = 'recipient'
++  ) THEN
++    ALTER TABLE public.cards RENAME COLUMN recipient_name TO recipient;
++  END IF;
++
++  IF EXISTS (
++    SELECT 1
++    FROM information_schema.columns
++    WHERE table_schema = 'public'
++      AND table_name = 'cards'
++      AND column_name = 'photo_urls'
++  ) AND NOT EXISTS (
++    SELECT 1
++    FROM information_schema.columns
++    WHERE table_schema = 'public'
++      AND table_name = 'cards'
++      AND column_name = 'photo_url'
++  ) THEN
++    ALTER TABLE public.cards RENAME COLUMN photo_urls TO photo_url;
++  END IF;
++END
++$$;
++
++ALTER TABLE public.cards
++  ADD COLUMN IF NOT EXISTS recipient text,
++  ADD COLUMN IF NOT EXISTS message text,
++  ADD COLUMN IF NOT EXISTS photo_url text[] DEFAULT '{}'::text[],
++  ADD COLUMN IF NOT EXISTS voice_url text,
++  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
++
++DO $$
++DECLARE
++  photo_type text;
++BEGIN
++  SELECT format_type(a.atttypid, a.atttypmod)
++  INTO photo_type
++  FROM pg_attribute a
++  JOIN pg_class c ON c.oid = a.attrelid
++  JOIN pg_namespace n ON n.oid = c.relnamespace
++  WHERE n.nspname = 'public'
++    AND c.relname = 'cards'
++    AND a.attname = 'photo_url'
++    AND NOT a.attisdropped;
++
++  IF photo_type = 'text' THEN
++    ALTER TABLE public.cards
++      ALTER COLUMN photo_url TYPE text[]
++      USING CASE
++        WHEN photo_url IS NULL OR photo_url = '' THEN '{}'::text[]
++        ELSE ARRAY[photo_url]
++      END;
++  END IF;
++END
++$$;
++
++ALTER TABLE public.cards
++  ALTER COLUMN recipient SET NOT NULL,
++  ALTER COLUMN photo_url SET DEFAULT '{}'::text[],
++  ALTER COLUMN created_at SET DEFAULT now();
++
++ALTER TABLE public.cards DROP COLUMN IF EXISTS theme;
++
++ALTER TABLE public.cards ENABLE ROW LEVEL SECURITY;
++
++DROP POLICY IF EXISTS "anon_select_cards" ON public.cards;
++CREATE POLICY "anon_select_cards"
++ON public.cards FOR SELECT
++TO anon, authenticated
++USING (true);
++
++DROP POLICY IF EXISTS "anon_insert_cards" ON public.cards;
++CREATE POLICY "anon_insert_cards"
++ON public.cards FOR INSERT
++TO anon, authenticated
++WITH CHECK (true);
++
++INSERT INTO storage.buckets (id, name, public)
++VALUES ('card-photos', 'card-photos', true)
++ON CONFLICT (id) DO UPDATE SET public = true;
++
++DROP POLICY IF EXISTS "Public read card photos" ON storage.objects;
++CREATE POLICY "Public read card photos"
++ON storage.objects FOR SELECT
++TO anon, authenticated
++USING (bucket_id = 'card-photos');
++
++DROP POLICY IF EXISTS "Anon upload card photos" ON storage.objects;
++CREATE POLICY "Anon upload card photos"
++ON storage.objects FOR INSERT
++TO anon, authenticated
++WITH CHECK (
++  bucket_id = 'card-photos'
++  AND (storage.foldername(name))[1] = 'cards'
++);
+diff --git a/vercel.json b/vercel.json
+new file mode 100644
+index 0000000..1323cda
+--- /dev/null
++++ b/vercel.json
+@@ -0,0 +1,8 @@
++{
++  "rewrites": [
++    {
++      "source": "/(.*)",
++      "destination": "/index.html"
++    }
++  ]
++}
+-- 
+2.53.0
+

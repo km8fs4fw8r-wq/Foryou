@@ -9,6 +9,8 @@ import {
 import { getCard, getPhotoPublicUrl } from '../lib/store';
 import type { Card } from '../lib/supabase';
 
+const PRODUCTION_SITE_URL = 'https://foryou-foryouu.vercel.app';
+
 export default function CardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -20,7 +22,9 @@ export default function CardPage() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const cardUrl = window.location.href;
+  const cardUrl = id
+    ? `${PRODUCTION_SITE_URL}/card/${encodeURIComponent(id)}`
+    : PRODUCTION_SITE_URL;
 
   useEffect(() => {
     if (!id) return;
