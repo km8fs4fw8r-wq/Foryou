@@ -39,6 +39,32 @@ export async function uploadPhoto(file: File, cardId: string): Promise<string> {
   return data.path;
 }
 
+export async function uploadVoice(blob: Blob, cardId: string): Promise<string> {
+  const extension = blob.type.includes('mp4')
+    ? 'm4a'
+    : blob.type.includes('ogg')
+      ? 'ogg'
+      : 'webm';
+  const path = `voices/${cardId}/${crypto.randomUUID()}.${extension}`;
+
+  const { data, error } = await supabase.storage.from('card-voice').upload(path, blob, {
+    cacheControl: '3600',
+    contentType: blob.type || 'audio/webm',
+    upsert: false,
+  });
+
+  if (error) {
+    console.error('[Supabase trace] storage.objects voice INSERT failed', {
+      bucket: 'card-voice',
+      path,
+      error,
+    });
+    throw new Error(`Voice upload failed: ${error.message}`);
+  }
+
+  return data.path;
+}
+
 export function getPhotoPublicUrl(value: string): string {
   if (/^https?:\/\//i.test(value)) return value;
 
@@ -50,10 +76,22 @@ export function getPhotoPublicUrl(value: string): string {
   return supabase.storage.from('card-photos').getPublicUrl(path).data.publicUrl;
 }
 
+export function getVoicePublicUrl(value: string): string {
+  if (/^https?:\/\//i.test(value)) return value;
+
+  const path = value
+    .replace(/^\/+/, '')
+    .replace(/^card-voice\//, '')
+    .replace(/\/+/g, '/');
+
+  return supabase.storage.from('card-voice').getPublicUrl(path).data.publicUrl;
+}
+
 export async function createCard(params: {
   recipientName: string;
   message: string;
   photoPath: string | null;
+  voicePath: string | null;
   theme: CardTheme;
 }): Promise<string> {
   const row = {
@@ -61,7 +99,7 @@ export async function createCard(params: {
     message: params.message,
     photo_url: params.photoPath,
     theme: params.theme,
-    voice_url: null,
+    voice_url: params.voicePath,
   };
 
   console.info('[Supabase trace] public.cards INSERT started', {

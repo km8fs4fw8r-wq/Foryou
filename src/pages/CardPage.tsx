@@ -4,9 +4,9 @@ import QRCode from 'qrcode';
 import {
   Heart,
   Download, Copy, Check,
-  ArrowLeft, Loader2, AlertCircle, Music, Volume2, VolumeX,
+  ArrowLeft, Loader2, AlertCircle, Music, Volume2, VolumeX, Mic,
 } from 'lucide-react';
-import { getCard, getPhotoPublicUrl } from '../lib/store';
+import { getCard, getPhotoPublicUrl, getVoicePublicUrl } from '../lib/store';
 import type { Card } from '../lib/supabase';
 import { getCardTheme } from '../lib/themes';
 
@@ -24,6 +24,7 @@ export default function CardPage() {
   const [copied, setCopied] = useState(false);
   const [envelopeState, setEnvelopeState] = useState<'sealed' | 'opening' | 'open'>('sealed');
   const [musicOn, setMusicOn] = useState(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicGainRef = useRef<GainNode | null>(null);
   const oscillatorsRef = useRef<OscillatorNode[]>([]);
@@ -60,41 +61,51 @@ export default function CardPage() {
   }, []);
 
   const startAmbientMusic = async () => {
-    if (audioContextRef.current) {
-      await audioContextRef.current.resume();
-      musicGainRef.current?.gain.setTargetAtTime(
-        0.035,
-        audioContextRef.current.currentTime,
-        1.5,
-      );
+    try {
+      setMusicError(null);
+
+      if (audioContextRef.current) {
+        await audioContextRef.current.resume();
+        musicGainRef.current?.gain.cancelScheduledValues(audioContextRef.current.currentTime);
+        musicGainRef.current?.gain.setTargetAtTime(
+          0.085,
+          audioContextRef.current.currentTime,
+          0.8,
+        );
+        setMusicOn(true);
+        return;
+      }
+
+      const context = new AudioContext();
+      await context.resume();
+
+      const masterGain = context.createGain();
+      masterGain.gain.setValueAtTime(0.0001, context.currentTime);
+      masterGain.gain.exponentialRampToValueAtTime(0.085, context.currentTime + 3.5);
+      masterGain.connect(context.destination);
+
+      const notes = [130.81, 164.81, 196];
+      const oscillators = notes.map((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = index === 0 ? 'sine' : 'triangle';
+        oscillator.frequency.value = frequency;
+        gain.gain.value = index === 0 ? 0.55 : 0.16;
+        oscillator.connect(gain);
+        gain.connect(masterGain);
+        oscillator.start();
+        return oscillator;
+      });
+
+      audioContextRef.current = context;
+      musicGainRef.current = masterGain;
+      oscillatorsRef.current = oscillators;
       setMusicOn(true);
-      return;
+    } catch (err) {
+      console.error('[Ambient music] Failed to start', err);
+      setMusicOn(false);
+      setMusicError('Music could not start on this device. Tap the sound button to retry.');
     }
-
-    const AudioContextClass = window.AudioContext;
-    const context = new AudioContextClass();
-    const masterGain = context.createGain();
-    masterGain.gain.setValueAtTime(0.0001, context.currentTime);
-    masterGain.gain.exponentialRampToValueAtTime(0.035, context.currentTime + 5);
-    masterGain.connect(context.destination);
-
-    const notes = [261.63, 329.63, 392];
-    const oscillators = notes.map((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency / 2;
-      gain.gain.value = index === 0 ? 0.5 : 0.22;
-      oscillator.connect(gain);
-      gain.connect(masterGain);
-      oscillator.start();
-      return oscillator;
-    });
-
-    audioContextRef.current = context;
-    musicGainRef.current = masterGain;
-    oscillatorsRef.current = oscillators;
-    setMusicOn(true);
   };
 
   const openEnvelope = () => {
@@ -117,9 +128,21 @@ export default function CardPage() {
       setMusicOn(false);
     } else {
       await context.resume();
-      musicGainRef.current?.gain.setTargetAtTime(0.035, context.currentTime, 0.8);
+      musicGainRef.current?.gain.setTargetAtTime(0.085, context.currentTime, 0.8);
       setMusicOn(true);
     }
+  };
+
+  const lowerAmbientMusic = () => {
+    const context = audioContextRef.current;
+    if (!context || !musicOn) return;
+    musicGainRef.current?.gain.setTargetAtTime(0.006, context.currentTime, 0.25);
+  };
+
+  const restoreAmbientMusic = () => {
+    const context = audioContextRef.current;
+    if (!context || !musicOn) return;
+    musicGainRef.current?.gain.setTargetAtTime(0.085, context.currentTime, 0.5);
   };
 
   const copyLink = async () => {
@@ -157,6 +180,9 @@ export default function CardPage() {
 
   const photoUrl = card.photo_url
     ? getPhotoPublicUrl(card.photo_url)
+    : null;
+  const voiceUrl = card.voice_url
+    ? getVoicePublicUrl(card.voice_url)
     : null;
   const theme = getCardTheme(card.theme);
   const isDarkTheme = theme.id === 'midnight';
@@ -277,6 +303,37 @@ export default function CardPage() {
           <Music className="w-3.5 h-3.5" />
           <span>Ambient music made for this moment</span>
         </div>
+
+        {musicError && (
+          <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800 text-center">
+            {musicError}
+          </div>
+        )}
+
+        {voiceUrl && (
+          <div className={`rounded-3xl shadow-lg shadow-black/5 p-6 ${isDarkTheme ? 'bg-slate-900 text-white' : 'bg-white'}`}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center">
+                <Mic className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-medium">A voice message for you</p>
+                <p className={`text-xs ${isDarkTheme ? 'text-white/45' : 'text-neutral-400'}`}>
+                  Press play to listen
+                </p>
+              </div>
+            </div>
+            <audio
+              controls
+              preload="metadata"
+              src={voiceUrl}
+              className="w-full"
+              onPlay={lowerAmbientMusic}
+              onPause={restoreAmbientMusic}
+              onEnded={restoreAmbientMusic}
+            />
+          </div>
+        )}
 
         {/* Share */}
         <div className="bg-white rounded-3xl shadow-lg shadow-black/5 p-7 animate-fade-in-up delay-200">

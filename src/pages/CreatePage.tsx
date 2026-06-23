@@ -1,15 +1,15 @@
-import { useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, ChevronRight, ChevronLeft, X,
-  Upload, Check, Loader2, Sparkles,
+  Upload, Check, Loader2, Sparkles, Mic, Square, Trash2,
 } from 'lucide-react';
-import { uploadPhoto, createCard } from '../lib/store';
+import { uploadPhoto, uploadVoice, createCard } from '../lib/store';
 import { CARD_THEMES, type CardTheme } from '../lib/themes';
 
 const STEPS = [
   { id: 1, label: 'Recipient' },
-  { id: 2, label: 'Photos' },
+  { id: 2, label: 'Media' },
   { id: 3, label: 'Theme' },
   { id: 4, label: 'Message' },
 ];
@@ -78,12 +78,27 @@ export default function CreatePage() {
 
   const [recipientName, setRecipientName] = useState('');
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [theme, setTheme] = useState<CardTheme>('classic');
   const [message, setMessage] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
 
   const handlePhotoSelect = useCallback(
     async (files: FileList | null) => {
@@ -127,9 +142,89 @@ export default function CreatePage() {
     });
   };
 
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const startRecording = async () => {
+    setSubmitError(null);
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setSubmitError('Voice recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredTypes = [
+        'audio/mp4',
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+      ];
+      const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recordingChunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      setRecordingSeconds(0);
+      setIsRecording(true);
+
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        });
+        setVoiceBlob(blob);
+        setVoicePreviewUrl(previous => {
+          if (previous) URL.revokeObjectURL(previous);
+          return URL.createObjectURL(blob);
+        });
+        setIsRecording(false);
+        stream.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      };
+
+      recorder.start();
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(seconds => {
+          if (seconds >= 119) {
+            stopRecording();
+            return 120;
+          }
+          return seconds + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error('[Voice recording] Failed to start', err);
+      setSubmitError('Microphone access was denied or unavailable.');
+      setIsRecording(false);
+    }
+  };
+
+  const removeVoice = () => {
+    if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
+    setVoicePreviewUrl(null);
+    setVoiceBlob(null);
+    setRecordingSeconds(0);
+  };
+
+  const formatDuration = (seconds: number) =>
+    `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
   const canNext = () => {
     if (step === 1) return recipientName.trim().length > 0;
-    if (step === 2) return photos.length > 0;
+    if (step === 2) return !isRecording;
     if (step === 3) return Boolean(theme);
     if (step === 4) return message.trim().length > 0;
     return true;
@@ -140,13 +235,15 @@ export default function CreatePage() {
     setSubmitError(null);
     try {
       const cardId = crypto.randomUUID();
-      const photoPath = photos[0]
-        ? await uploadPhoto(photos[0].file, cardId)
-        : null;
+      const [photoPath, voicePath] = await Promise.all([
+        photos[0] ? uploadPhoto(photos[0].file, cardId) : Promise.resolve(null),
+        voiceBlob ? uploadVoice(voiceBlob, cardId) : Promise.resolve(null),
+      ]);
       const savedId = await createCard({
         recipientName: recipientName.trim(),
         message: message.trim(),
         photoPath,
+        voicePath,
         theme,
       });
       navigate(`/card/${savedId}`);
@@ -244,14 +341,16 @@ export default function CreatePage() {
             </div>
           )}
 
-          {/* Step 2 — Photos */}
+          {/* Step 2 — Optional media */}
           {step === 2 && (
             <div className="animate-fade-in-up">
               <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 2</p>
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
-                Add photos
+                Add something personal
               </h2>
-              <p className="text-neutral-500 mb-8">Upload a photo for the card.</p>
+              <p className="text-neutral-500 mb-8">
+                Photo and voice are optional. Add either one, both, or skip this step.
+              </p>
 
               <input
                 ref={fileInputRef}
@@ -261,44 +360,107 @@ export default function CreatePage() {
                 onChange={e => { void handlePhotoSelect(e.target.files); }}
               />
 
-              {photos.length === 0 ? (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full border-2 border-dashed border-neutral-200 rounded-3xl p-14 text-center hover:border-neutral-400 hover:bg-neutral-50 transition-all group"
-                >
-                  <div className="w-14 h-14 rounded-2xl bg-neutral-100 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                    <Upload className="w-7 h-7 text-neutral-400" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-3xl border border-neutral-200 p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="font-medium text-neutral-800">Photo</p>
+                      <p className="text-xs text-neutral-400">Optional</p>
+                    </div>
+                    <Upload className="w-5 h-5 text-neutral-300" />
                   </div>
-                  <p className="font-medium text-neutral-700 mb-1">Click to upload a photo</p>
-                  <p className="text-sm text-neutral-400">JPEG, PNG, or WebP</p>
-                </button>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-3 mb-3">
-                    {photos.map((photo, i) => (
-                      <div
-                        key={i}
-                        className="relative aspect-square rounded-2xl overflow-hidden group animate-scale-in"
+
+                  {photos.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full aspect-square rounded-2xl border-2 border-dashed border-neutral-200 flex flex-col items-center justify-center gap-2 hover:border-neutral-400 hover:bg-neutral-50 transition-all"
+                    >
+                      <Upload className="w-6 h-6 text-neutral-300" />
+                      <span className="text-sm text-neutral-500">Choose photo</span>
+                      <span className="text-xs text-neutral-300">HEIC supported</span>
+                    </button>
+                  ) : (
+                    <div className="relative aspect-square rounded-2xl overflow-hidden group">
+                      <img
+                        src={photos[0].preview}
+                        alt="Selected"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(0)}
+                        className="absolute top-2 right-2 w-8 h-8 bg-black/60 text-white rounded-full flex items-center justify-center"
+                        aria-label="Remove photo"
                       >
-                        <img src={photo.preview} alt="" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                        <button
-                          onClick={() => removePhoto(i)}
-                          className="absolute top-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-sm text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-3xl border border-neutral-200 p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="font-medium text-neutral-800">Voice message</p>
+                      <p className="text-xs text-neutral-400">Optional · up to 2 minutes</p>
+                    </div>
+                    <Mic className={`w-5 h-5 ${isRecording ? 'text-red-500' : 'text-neutral-300'}`} />
                   </div>
-                  <p className="text-xs text-neutral-400 text-right font-medium">1 photo</p>
-                </>
-              )}
+
+                  {!voiceBlob ? (
+                    <button
+                      type="button"
+                      onClick={isRecording ? stopRecording : () => { void startRecording(); }}
+                      className={`w-full aspect-square rounded-2xl border flex flex-col items-center justify-center gap-3 transition-all ${
+                        isRecording
+                          ? 'border-red-200 bg-red-50 text-red-600'
+                          : 'border-dashed border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 text-neutral-600'
+                      }`}
+                    >
+                      <div className={`relative w-14 h-14 rounded-full flex items-center justify-center ${
+                        isRecording ? 'bg-red-500 text-white recording-ring' : 'bg-neutral-100'
+                      }`}>
+                        {isRecording ? <Square className="w-5 h-5 fill-current" /> : <Mic className="w-6 h-6" />}
+                      </div>
+                      <span className="font-medium">
+                        {isRecording ? 'Tap to stop' : 'Record message'}
+                      </span>
+                      <span className="text-sm">
+                        {isRecording ? formatDuration(recordingSeconds) : 'Microphone permission required'}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="aspect-square rounded-2xl bg-neutral-50 border border-neutral-100 p-4 flex flex-col items-center justify-center gap-5">
+                      <div className="w-14 h-14 rounded-full bg-black text-white flex items-center justify-center">
+                        <Mic className="w-6 h-6" />
+                      </div>
+                      {voicePreviewUrl && (
+                        <audio controls src={voicePreviewUrl} className="w-full" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={removeVoice}
+                        className="inline-flex items-center gap-2 text-sm text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete recording
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {submitError && (
                 <div className="mt-5 p-4 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm">
                   {submitError}
                 </div>
+              )}
+
+              {!photos.length && !voiceBlob && !isRecording && (
+                <p className="mt-5 text-center text-sm text-neutral-400">
+                  Nothing to add? Tap Continue to skip.
+                </p>
               )}
             </div>
           )}
