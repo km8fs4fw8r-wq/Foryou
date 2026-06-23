@@ -52,6 +52,16 @@
   100% { transform: scale(1.4); opacity: 0; }
 }
 
+@keyframes cardEmerge {
+  from { opacity: 0; transform: translateY(80px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes envelopeGlow {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+
 .animate-fade-in-up {
   animation: fadeInUp 0.6s ease-out both;
 }
@@ -66,6 +76,95 @@
 
 .animate-slide-in-right {
   animation: slideInRight 0.5s ease-out both;
+}
+
+.animate-card-emerge {
+  animation: cardEmerge 1.4s cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.envelope-glow {
+  background: radial-gradient(circle at center, rgba(255,255,255,0.7), transparent 52%);
+  animation: envelopeGlow 4s ease-in-out infinite;
+}
+
+.envelope-scene {
+  position: relative;
+  width: min(82vw, 340px);
+  height: 220px;
+  margin: 0 auto;
+  perspective: 1000px;
+}
+
+.envelope-back,
+.envelope-letter-pocket,
+.envelope-flap {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+}
+
+.envelope-back {
+  z-index: 1;
+}
+
+.envelope-letter-pocket {
+  z-index: 4;
+  clip-path: polygon(0 30%, 50% 72%, 100% 30%, 100% 100%, 0 100%);
+}
+
+.envelope-flap {
+  z-index: 5;
+  clip-path: polygon(0 0, 100% 0, 50% 64%);
+  transform-origin: top center;
+  transition: transform 1s cubic-bezier(0.2, 0.7, 0.2, 1), z-index 0s linear 0.5s;
+}
+
+.envelope-card-preview {
+  position: absolute;
+  z-index: 3;
+  left: 7%;
+  right: 7%;
+  top: 10px;
+  height: 190px;
+  border-radius: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12);
+  transition: transform 1.5s cubic-bezier(0.18, 0.75, 0.2, 1) 0.65s;
+}
+
+.envelope-seal {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 103px;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #be5b68;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 7px 18px rgba(100, 30, 45, 0.32);
+  transition: opacity 0.35s ease, transform 0.5s ease;
+}
+
+.envelope-scene.is-opening .envelope-flap {
+  z-index: 2;
+  transform: rotateX(180deg);
+}
+
+.envelope-scene.is-opening .envelope-card-preview {
+  transform: translateY(-155px);
+}
+
+.envelope-scene.is-opening .envelope-seal {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.6);
 }
 
 .delay-100 { animation-delay: 0.1s; }

@@ -5,11 +5,13 @@ import {
   Upload, Check, Loader2, Sparkles,
 } from 'lucide-react';
 import { uploadPhoto, createCard } from '../lib/store';
+import { CARD_THEMES, type CardTheme } from '../lib/themes';
 
 const STEPS = [
   { id: 1, label: 'Recipient' },
   { id: 2, label: 'Photos' },
-  { id: 3, label: 'Message' },
+  { id: 3, label: 'Theme' },
+  { id: 4, label: 'Message' },
 ];
 
 interface PhotoItem {
@@ -76,6 +78,7 @@ export default function CreatePage() {
 
   const [recipientName, setRecipientName] = useState('');
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [theme, setTheme] = useState<CardTheme>('classic');
   const [message, setMessage] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,7 +130,8 @@ export default function CreatePage() {
   const canNext = () => {
     if (step === 1) return recipientName.trim().length > 0;
     if (step === 2) return photos.length > 0;
-    if (step === 3) return message.trim().length > 0;
+    if (step === 3) return Boolean(theme);
+    if (step === 4) return message.trim().length > 0;
     return true;
   };
 
@@ -143,6 +147,7 @@ export default function CreatePage() {
         recipientName: recipientName.trim(),
         message: message.trim(),
         photoPath,
+        theme,
       });
       navigate(`/card/${savedId}`);
     } catch (err) {
@@ -298,10 +303,54 @@ export default function CreatePage() {
             </div>
           )}
 
-          {/* Step 3 — Message */}
+          {/* Step 3 — Theme */}
           {step === 3 && (
             <div className="animate-fade-in-up">
               <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 3</p>
+              <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
+                Choose a theme
+              </h2>
+              <p className="text-neutral-500 mb-8">
+                Set the mood for the moment they open it.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                {CARD_THEMES.map(option => {
+                  const selected = theme === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTheme(option.id)}
+                      className={`relative overflow-hidden rounded-2xl border p-3 text-left transition-all ${
+                        selected
+                          ? 'border-black ring-2 ring-black/10'
+                          : 'border-neutral-200 hover:border-neutral-400'
+                      }`}
+                    >
+                      <div className={`h-24 rounded-xl bg-gradient-to-br ${option.preview} mb-3 relative overflow-hidden`}>
+                        <div className="absolute left-1/2 top-6 h-14 w-20 -translate-x-1/2 rounded-lg bg-white/80 shadow-md" />
+                        {selected && (
+                          <div className="absolute right-2 top-2 w-6 h-6 rounded-full bg-black text-white flex items-center justify-center">
+                            <Check className="w-3.5 h-3.5" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="font-medium text-neutral-900">{option.name}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                        {option.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4 — Message */}
+          {step === 4 && (
+            <div className="animate-fade-in-up">
+              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-3">Step 4</p>
               <h2 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 mb-2">
                 Write your message
               </h2>

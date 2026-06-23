@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
   Heart,
   Download, Copy, Check,
-  ArrowLeft, Loader2, AlertCircle,
+  ArrowLeft, Loader2, AlertCircle, Music, Volume2, VolumeX,
 } from 'lucide-react';
 import { getCard, getPhotoPublicUrl } from '../lib/store';
 import type { Card } from '../lib/supabase';
+import { getCardTheme } from '../lib/themes';
 
 const PRODUCTION_SITE_URL = 'https://foryou-foryouu.vercel.app';
 
@@ -21,6 +22,11 @@ export default function CardPage() {
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [envelopeState, setEnvelopeState] = useState<'sealed' | 'opening' | 'open'>('sealed');
+  const [musicOn, setMusicOn] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const musicGainRef = useRef<GainNode | null>(null);
+  const oscillatorsRef = useRef<OscillatorNode[]>([]);
 
   const cardUrl = id
     ? `${PRODUCTION_SITE_URL}/card/${encodeURIComponent(id)}`
@@ -45,6 +51,76 @@ export default function CardPage() {
       color: { dark: '#1a1a1a', light: '#ffffff' },
     }).then(setQrDataUrl);
   }, [card, cardUrl]);
+
+  useEffect(() => {
+    return () => {
+      oscillatorsRef.current.forEach(oscillator => oscillator.stop());
+      void audioContextRef.current?.close();
+    };
+  }, []);
+
+  const startAmbientMusic = async () => {
+    if (audioContextRef.current) {
+      await audioContextRef.current.resume();
+      musicGainRef.current?.gain.setTargetAtTime(
+        0.035,
+        audioContextRef.current.currentTime,
+        1.5,
+      );
+      setMusicOn(true);
+      return;
+    }
+
+    const AudioContextClass = window.AudioContext;
+    const context = new AudioContextClass();
+    const masterGain = context.createGain();
+    masterGain.gain.setValueAtTime(0.0001, context.currentTime);
+    masterGain.gain.exponentialRampToValueAtTime(0.035, context.currentTime + 5);
+    masterGain.connect(context.destination);
+
+    const notes = [261.63, 329.63, 392];
+    const oscillators = notes.map((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency / 2;
+      gain.gain.value = index === 0 ? 0.5 : 0.22;
+      oscillator.connect(gain);
+      gain.connect(masterGain);
+      oscillator.start();
+      return oscillator;
+    });
+
+    audioContextRef.current = context;
+    musicGainRef.current = masterGain;
+    oscillatorsRef.current = oscillators;
+    setMusicOn(true);
+  };
+
+  const openEnvelope = () => {
+    if (envelopeState !== 'sealed') return;
+    setEnvelopeState('opening');
+    void startAmbientMusic();
+    window.setTimeout(() => setEnvelopeState('open'), 2600);
+  };
+
+  const toggleMusic = async () => {
+    const context = audioContextRef.current;
+    if (!context) {
+      await startAmbientMusic();
+      return;
+    }
+
+    if (musicOn) {
+      musicGainRef.current?.gain.setTargetAtTime(0.0001, context.currentTime, 0.5);
+      window.setTimeout(() => { void context.suspend(); }, 900);
+      setMusicOn(false);
+    } else {
+      await context.resume();
+      musicGainRef.current?.gain.setTargetAtTime(0.035, context.currentTime, 0.8);
+      setMusicOn(true);
+    }
+  };
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(cardUrl);
@@ -82,9 +158,47 @@ export default function CardPage() {
   const photoUrl = card.photo_url
     ? getPhotoPublicUrl(card.photo_url)
     : null;
+  const theme = getCardTheme(card.theme);
+  const isDarkTheme = theme.id === 'midnight';
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className={`min-h-screen transition-colors duration-1000 ${theme.page}`}>
+      {envelopeState !== 'open' && (
+        <div className={`fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-gradient-to-b ${theme.preview} px-6`}>
+          <div className="absolute inset-0 envelope-glow" />
+          <button
+            type="button"
+            onClick={openEnvelope}
+            disabled={envelopeState === 'opening'}
+            className="relative w-full max-w-sm text-center focus:outline-none"
+            aria-label={`Open card for ${card.recipient}`}
+          >
+            <div className={`envelope-scene ${envelopeState === 'opening' ? 'is-opening' : ''}`}>
+              <div className={`envelope-card-preview ${theme.card}`}>
+                <Heart className="w-5 h-5 mx-auto mb-2 text-rose-400 fill-rose-400" />
+                <p className={`font-display text-xl ${isDarkTheme ? 'text-white' : 'text-neutral-800'}`}>
+                  For {card.recipient}
+                </p>
+              </div>
+              <div className={`envelope-back bg-gradient-to-br ${theme.envelope}`} />
+              <div className={`envelope-letter-pocket bg-gradient-to-t ${theme.envelope}`} />
+              <div className={`envelope-flap bg-gradient-to-br ${theme.envelope}`} />
+              <div className="envelope-seal">
+                <Heart className="w-5 h-5 fill-white text-white" />
+              </div>
+            </div>
+            <div className={`mt-12 transition-opacity duration-500 ${envelopeState === 'opening' ? 'opacity-0' : 'opacity-100'}`}>
+              <p className={`font-display text-2xl font-semibold ${isDarkTheme ? 'text-white' : 'text-neutral-900'}`}>
+                A card is waiting for you
+              </p>
+              <p className={`mt-2 text-sm ${isDarkTheme ? 'text-white/60' : 'text-neutral-500'}`}>
+                Tap the envelope to open
+              </p>
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-black/5">
         <div className="max-w-xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -96,6 +210,14 @@ export default function CardPage() {
             <span className="text-sm font-medium">WishLink</span>
           </button>
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => { void toggleMusic(); }}
+              className="mr-2 w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-900"
+              aria-label={musicOn ? 'Mute music' : 'Play music'}
+            >
+              {musicOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
             <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
             <span className="text-xs font-medium text-neutral-500">Greeting card</span>
           </div>
@@ -105,14 +227,16 @@ export default function CardPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-8 space-y-4">
 
         {/* Card */}
-        <div className="bg-white rounded-3xl shadow-lg shadow-black/5 overflow-hidden animate-scale-in">
-          <div className="h-1 w-full bg-gradient-to-r from-rose-300 via-pink-400 to-rose-300" />
+        <div className={`rounded-3xl shadow-lg shadow-black/10 overflow-hidden ${theme.card} ${
+          envelopeState === 'open' ? 'animate-card-emerge' : 'opacity-0 translate-y-8'
+        }`}>
+          <div className={`h-1 w-full bg-gradient-to-r ${theme.accent}`} />
 
           {/* Title */}
           <div className="px-7 pt-7 pb-5 flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-1">A card for</p>
-              <h1 className="font-display text-3xl sm:text-4xl font-semibold text-neutral-950 leading-tight">
+              <p className={`text-xs font-medium uppercase tracking-widest mb-1 ${isDarkTheme ? 'text-white/45' : 'text-neutral-400'}`}>A card for</p>
+              <h1 className={`font-display text-3xl sm:text-4xl font-semibold leading-tight ${isDarkTheme ? 'text-white' : 'text-neutral-950'}`}>
                 {card.recipient}
               </h1>
             </div>
@@ -141,12 +265,17 @@ export default function CardPage() {
 
           {/* Message */}
           {card.message && (
-            <div className="px-7 py-6 border-t border-neutral-50">
-              <p className="font-display text-lg text-neutral-700 leading-relaxed whitespace-pre-wrap italic">
+            <div className={`px-7 py-6 border-t ${isDarkTheme ? 'border-white/10' : 'border-neutral-50'}`}>
+              <p className={`font-display text-lg leading-relaxed whitespace-pre-wrap italic ${isDarkTheme ? 'text-white/80' : 'text-neutral-700'}`}>
                 "{card.message}"
               </p>
             </div>
           )}
+        </div>
+
+        <div className={`flex items-center justify-center gap-2 text-xs ${isDarkTheme ? 'text-white/45' : 'text-neutral-400'}`}>
+          <Music className="w-3.5 h-3.5" />
+          <span>Ambient music made for this moment</span>
         </div>
 
         {/* Share */}

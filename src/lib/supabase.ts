@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { CardTheme } from './themes';
 
 const supabaseUrl =
   (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
@@ -15,6 +16,7 @@ export interface Card {
   recipient: string;
   message: string | null;
   photo_url: string | null;
+  theme: CardTheme;
   voice_url: string | null;
   created_at: string;
 }

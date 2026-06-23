@@ -1,4 +1,5 @@
 import { supabase, type Card } from './supabase';
+import type { CardTheme } from './themes';
 
 export async function uploadPhoto(file: File, cardId: string): Promise<string> {
   const rawExtension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
@@ -53,11 +54,13 @@ export async function createCard(params: {
   recipientName: string;
   message: string;
   photoPath: string | null;
+  theme: CardTheme;
 }): Promise<string> {
   const row = {
     recipient: params.recipientName,
     message: params.message,
     photo_url: params.photoPath,
+    theme: params.theme,
     voice_url: null,
   };
 
